@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arrayprint"
+description = "Programmatic spotting using Scienion S3 liquid-handling robots."
+requires-python = ">=3.9"
+dynamic = ["version"]
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Micah Olivas", email = "mbolivas@stanford.edu"},
+    {name = "Lucas Melo", email = "lanmelo@stanford.edu"}
+]
+keywords = ["microfluidics", "biophysics", "liquid-handling", "mitomi", "scienion"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+dependencies = [
+    "numpy>=1.20.3",
+    "pandas>=1.3.2",
+    "matplotlib>=3.4.2",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "arrayprint.__version__" }
+
+[tool.isort]
+profile = "black"
+line_length = 79
+skip_gitignore = true
+
+[tool.black]
+line-length = 79
+target-version = ['py39']
+skip_magic_trailing_comma = true
+
+[tool.mypy]
+ignore_missing_imports = true
+strict = true
+warn_unreachable = true
+enable_error_code = [
+    "explicit-override",
+    "redundant-expr",
+    "truthy-bool",
+    "truthy-iterable",
+    "ignore-without-code",
+    "redundant-self",
+]
+
+[tool.pylint.basic]
+variable-rgx = "^[a-z][a-zA-Z0-9_]*$"
+
+[tool.pylint.format]
+ignore-long-lines = "(?x)(\n\\#\\ type:\\ ignore)"
+max-line-length = 79
+
+[tool.pylint."messages control"]
+disable = [
+    "cyclic-import",
+    "duplicate-code",
+    "import-error",
+    "too-many-ancestors",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-statements",
+]
+enable = [
+    "deprecated-pragma",
+    "useless-suppression",
+    "use-symbolic-message-instead",
+    "bad-inline-option",
+]
