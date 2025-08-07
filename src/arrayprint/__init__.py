@@ -2,7 +2,7 @@
 
 from collections import Counter
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, get_args
 
 import matplotlib.figure
 import matplotlib.pyplot as plt
@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 from numpy import typing as npt
 
+from .field_files import headers_footers
+
 __version__ = "0.1.0"
+DeviceTypes = Literal["PS1.8K", "STAMMP-seq"]
+assert tuple(headers_footers.keys()) == get_args(DeviceTypes)
 
 
 def get_block(
@@ -95,16 +99,24 @@ def generate_print_array(
     return print_array
 
 
-def get_fld(print_array: npt.NDArray[Any]) -> str:
+def get_fld(
+    print_array: npt.NDArray[Any], device: DeviceTypes | None = None
+) -> str:
     """Get FLD file as a string.
 
     Args:
         print_array: Array containing mutant positions
+        device: Device type used for writing the header and footer
     """
     print_array = np.flip(print_array, axis=1)  # Scienion flips orientation
     rows, columns = print_array.shape
 
-    out = []
+    if device is not None:
+        header, footer = headers_footers[device]
+        out = [header]
+    else:
+        out = []
+
     for i in range(0, columns):
         for j in range(0, rows):
             current_fld_loc = f"{i + 1}/{j+1}"
@@ -114,22 +126,31 @@ def get_fld(print_array: npt.NDArray[Any]) -> str:
             if len(array_loc_print) >= 1:
                 if array_loc_print[0] != "1":
                     array_loc_print = "1" + array_loc_print
+                out.append(f"{current_fld_loc}\t{array_loc_print},\t1,")
+            else:
+                out.append(f"{current_fld_loc}\t\t")
 
-            out.append(f"{current_fld_loc}\t{array_loc_print},\t1")
+    if device is not None:
+        out.append(footer)
 
-    return "\n".join(out)
+    return "\r\n".join(out)
 
 
-def write_fld(basename: str, print_array: npt.NDArray[Any]) -> None:
+def write_fld(
+    basename: str,
+    print_array: npt.NDArray[Any],
+    device: DeviceTypes | None = None,
+) -> None:
     """Write FLD file to disk.
 
     Args:
         basename: Base filename for the FLD file
         print_array: Array containing mutant positions
+        device: Device type used for writing the header and footer
     """
     timestamp = datetime.now().strftime(r"%Y_%m_%d__%H_%M_%S")
-    with open(f"{basename}_{timestamp}.fld", "wt", encoding="UTF-8") as f:
-        f.write(get_fld(print_array))
+    with open(f"{basename}_{timestamp}.fld", "wt", encoding="cp1252") as f:
+        f.write(get_fld(print_array, device=device))
 
 
 def get_print_metrics(print_array: npt.NDArray[Any]) -> dict[str, Any]:
