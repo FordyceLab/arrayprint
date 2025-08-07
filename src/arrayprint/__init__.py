@@ -26,14 +26,17 @@ def get_block(
     return print_array[:, width * block : width * (block + 1)]
 
 
-def fill_array(wells: pd.Series, array: npt.NDArray[Any]) -> None:
+def fill_array(
+    wells: pd.Series, array: npt.NDArray[Any], seed: int | None = None
+) -> None:
     """Randomly fill array in-place, keeping the replicates per well ~constant.
 
     Args:
         wells: Iterable containing plate well information
         array: Array to fill with values
+        seed: Seed for random generation
     """
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
 
     # Calculate number of replicates per well
     to_fill = np.sum(array == None)  # pylint: disable=singleton-comparison
@@ -66,6 +69,7 @@ def generate_print_array(
     n_blocks: int = 1,
     notch_column: int = 28,
     notch_depth: int = 20,
+    seed: int | None = None,
 ) -> npt.NDArray[Any]:
     """Generate optimized print array from print_spec dataframe.
 
@@ -77,6 +81,7 @@ def generate_print_array(
         n_blocks: Number of blocks to divide array into
         notch_column: Column to notch with no spots to orient the slide
         notch_depth: Depth of the notch (0 for no notch)
+        seed: Seed for random generation
 
     Returns:
         Numpy array of strings containing print layout
@@ -94,7 +99,9 @@ def generate_print_array(
         indexing = print_spec["Block"].apply(
             lambda x: i + 1 in x  # pylint: disable=cell-var-from-loop
         )
-        fill_array(plate_well[indexing], get_block(print_array, i, n_blocks))
+        fill_array(
+            plate_well[indexing], get_block(print_array, i, n_blocks), seed
+        )
 
     return print_array
 
