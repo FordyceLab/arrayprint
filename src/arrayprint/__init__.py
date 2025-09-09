@@ -1,7 +1,12 @@
 """Programmatic spotting using Scienion S3 liquid-handling robots."""
 
+# TODO: add support for two-lagoon devices
+
+import warnings
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime
+from io import StringIO
 from typing import Any, Literal, get_args
 
 import matplotlib.figure
@@ -13,8 +18,11 @@ from numpy import typing as npt
 from .field_files import headers_footers
 
 __version__ = "0.1.0"
-DeviceTypes = Literal["PS1.8K", "STAMMP-seq"]
+DeviceTypes = Literal["PS1.8K", "2lagoon"]
 assert tuple(headers_footers.keys()) == get_args(DeviceTypes)
+
+WASH = "WASH"
+BUF = "BUF"
 
 
 def get_block(
@@ -27,7 +35,7 @@ def get_block(
 
 
 def fill_array(
-    wells: pd.Series, array: npt.NDArray[Any], seed: int | None = None
+    wells: list[str], array: npt.NDArray[Any], seed: int | None = None
 ) -> None:
     """Randomly fill array in-place, keeping the replicates per well ~constant.
 
@@ -51,7 +59,7 @@ def fill_array(
         np.repeat(wells, repeats=replicates),
         rng.choice(wells, size=(to_fill % len(wells),), replace=False),
     ]
-    fill_values = np.concat(arrays, axis=0)
+    fill_values = np.concatenate(arrays, axis=0)
     assert len(fill_values) == to_fill
     rng.shuffle(fill_values)
 
@@ -62,46 +70,68 @@ def fill_array(
 
 
 def generate_print_array(
-    print_spec: pd.DataFrame,
+    print_plates: Iterable[pd.DataFrame],
     rows: int = 56,
     columns: int = 32,
     skip_rows: bool = True,
-    n_blocks: int = 1,
-    notch_column: int = 28,
-    notch_depth: int = 20,
+    block_info: Iterable[Iterable[str]] | None = None,
+    empty_buf_well: str = "",
+    wash_array_loc: tuple[int, int] | None = None,
     seed: int | None = None,
 ) -> npt.NDArray[Any]:
-    """Generate optimized print array from print_spec dataframe.
+    """Generate optimized print array from a print_plate dataframe.
 
     Args:
-        print_spec: DataFrame containing print data
+        print_plate: DataFrame containing print data
         rows: Number of rows in device
         columns: Number of columns in device
         skip_rows: Whether to add blank rows
-        n_blocks: Number of blocks to divide array into
-        notch_column: Column to notch with no spots to orient the slide
-        notch_depth: Depth of the notch (0 for no notch)
         seed: Seed for random generation
 
     Returns:
         Numpy array of strings containing print layout
     """
+    # Create print array
     print_array = np.full((rows, columns), fill_value=None, dtype="object")
-    plate_well = print_spec["Plate"].astype(str) + print_spec["Well"]
-
-    # Add skipped rows and notch
     if skip_rows:
-        print_array[1::2] = ""
-    print_array[:notch_depth, notch_column] = ""
+        print_array[1::2] = empty_buf_well
+
+    # Create block_info if not specified
+    if block_info is None:
+        block_info = [
+            np.concatenate(
+                [plate.to_numpy().flatten() for plate in print_plates]
+            )
+        ]
+    block_info = [[j for j in i if j not in (WASH, BUF)] for i in block_info]
+
+    # Fill in wash wells
+    wash_wells: list[str] = [] if empty_buf_well == "" else [empty_buf_well]
+    for plate_idx, plate in enumerate(print_plates, start=1):
+        row, col = np.nonzero(plate.to_numpy() == WASH)
+        for i, j in zip(row, col):
+            wash_wells.append(f"{plate_idx}{plate.index[i]}{plate.columns[j]}")
+    if len(wash_wells) > 0 and wash_array_loc is None:
+        warnings.warn(
+            f"Found {len(wash_wells)} wash wells in the print plate"
+            " but no location was provided to spot them on the array;"
+            " you can do so using the `wash_array_loc` argument"
+        )
+        print_array[wash_array_loc[1] - 1, wash_array_loc[0] - 1] = ",".join(
+            wash_wells
+        )
 
     # Fill in each block in-place using slicing to produce a view
-    for i in range(n_blocks):
-        indexing = print_spec["Block"].apply(
-            lambda x: i + 1 in x  # pylint: disable=cell-var-from-loop
-        )
-        fill_array(
-            plate_well[indexing], get_block(print_array, i, n_blocks), seed
-        )
+    for i, block in enumerate(block_info):
+        wells: list[str] = []
+        for val in block:
+            for plate_idx, plate in enumerate(print_plates, start=1):
+                row, col = np.nonzero(plate.to_numpy() == val)
+                for r, c in zip(row, col):
+                    wells.append(
+                        f"{plate_idx}{plate.index[r]}{plate.columns[c]}"
+                    )
+        fill_array(wells, get_block(print_array, i, len(block_info)), seed)
 
     return print_array
 
@@ -115,7 +145,7 @@ def get_fld(
         print_array: Array containing mutant positions
         device: Device type used for writing the header and footer
     """
-    print_array = np.flip(print_array, axis=1)  # Scienion flips orientation
+    # print_array = np.flip(print_array, axis=1)  # Scienion flips orientation
     rows, columns = print_array.shape
 
     if device is not None:
@@ -126,16 +156,14 @@ def get_fld(
 
     for i in range(0, columns):
         for j in range(0, rows):
-            current_fld_loc = f"{i + 1}/{j+1}"
-            array_loc_print = print_array[j, i]
+            array_loc = f"{i + 1}/{j+1}"
+            wells = print_array[j, i]
 
-            # Add a plate number to only the non-blank wells
-            if len(array_loc_print) >= 1:
-                if array_loc_print[0] != "1":
-                    array_loc_print = "1" + array_loc_print
-                out.append(f"{current_fld_loc}\t{array_loc_print},\t1,")
+            if len(wells) >= 1:
+                num_spots = len(wells.split(","))
+                out.append(f"{array_loc}\t{wells},\t{'1,'*num_spots}")
             else:
-                out.append(f"{current_fld_loc}\t\t")
+                out.append(f"{array_loc}\t\t")
 
     if device is not None:
         out.append(footer)
@@ -158,6 +186,50 @@ def write_fld(
     timestamp = datetime.now().strftime(r"%Y_%m_%d__%H_%M_%S")
     with open(f"{basename}_{timestamp}.fld", "wt", encoding="cp1252") as f:
         f.write(get_fld(print_array, device=device))
+
+
+def load_fld(path: str) -> pd.DataFrame:
+    """Load a field file into a dataframe."""
+    # TODO: convert to print_array
+    with open(path, "rt", encoding="cp1252") as f:
+        fld_contents = f.read()
+    fields = [
+        pd.read_table(
+            StringIO(i.split("\n\n")[0]),
+            sep="\t",
+            header=None,
+            names=["array_loc", "well", "spots"],
+        )
+        for i in fld_contents.split("]\n")[1:]
+    ]
+    for i in fields:
+        i.well = i.well.apply(lambda x: x[:-1] if len(x) > 2 else x[0])
+        i.spots = i.spots.apply(lambda x: x[:-1] if len(x) > 2 else x[0])
+
+    return pd.concat(fields, keys=range(len(fields)), axis=0)
+
+
+def get_pinlist(fld: pd.DataFrame, print_plate: pd.DataFrame) -> pd.DataFrame:
+    """Outputs the pinlist expected by ProcessingPack."""
+    pinlist = pd.DataFrame(
+        {
+            "Indices": [
+                (int(i), int(j))
+                for i, j in fld.loc[0].array_loc.str.split("/")
+            ],
+            "MutantID": [
+                (
+                    "BLANK"
+                    if i.startswith("1P24")
+                    else print_plate.loc[i[1], int(i[2:])]
+                )
+                for i in fld.loc[0].well
+            ],
+        }
+    )
+    pinlist["x"] = pinlist.Indices.apply(lambda x: x[0])
+    pinlist["y"] = pinlist.Indices.apply(lambda x: x[1])
+    return pinlist.set_index(["x", "y"], drop=True).sort_index()
 
 
 def get_print_metrics(print_array: npt.NDArray[Any]) -> dict[str, Any]:
@@ -213,8 +285,7 @@ def print_metrics_summary(metrics: dict[str, Any]) -> None:
 
 def plot_mutant_position(
     print_array: npt.NDArray[Any],
-    print_spec: pd.DataFrame,
-    variant: str,
+    plate_well: str,
     n_blocks: int = 1,
     figsize: tuple[float, float] = (4, 4),
 ) -> matplotlib.figure.Figure:
@@ -229,12 +300,6 @@ def plot_mutant_position(
     Returns:
         fig, ax: Figure and axis objects
     """
-    # Get plate-well information for variant
-    row = print_spec[variant == print_spec["Name"]]
-    if len(row) != 1:
-        raise RuntimeError(f"{variant} does not appear exactly once")
-    plate_well = f"{row['Plate'].item()}{row['Well'].item()}"
-
     # Create blocked suplots
     fig, axs = plt.subplots(ncols=n_blocks, figsize=figsize)
     if n_blocks == 1:
@@ -246,12 +311,14 @@ def plot_mutant_position(
         if n_blocks > 1:
             axs[i].set_title(f"Block {i}")
 
-    fig.suptitle(f"{variant} in Print")
+    fig.suptitle(f"{plate_well} in Print")
     return fig
 
 
 def plot_array_heatmap(
-    print_array: npt.NDArray[Any], figsize: tuple[float, float] = (10, 6)
+    print_array: npt.NDArray[Any],
+    empty_buf_well: str = "",
+    figsize: tuple[float, float] = (10, 6),
 ) -> matplotlib.figure.Figure:
     """Plot a heatmap visualization of the print array.
 
@@ -265,17 +332,25 @@ def plot_array_heatmap(
     """
     # Float representation of print array
     int_print_array = print_array.copy()
-    for i, val in enumerate(np.unique(int_print_array)):
+    unique_vals = np.unique(int_print_array)
+    for i, val in enumerate(unique_vals):
         if val == "":
-            int_print_array[int_print_array == val] = None
+            # Empty wells are white
+            fill_value = 2 * len(unique_vals)
+        elif empty_buf_well != "" and val == empty_buf_well:
+            # Wells with 1X buffer are black
+            fill_value = None
         else:
-            int_print_array[int_print_array == val] = i
+            fill_value = i
+
+        int_print_array[int_print_array == val] = fill_value
+
     int_print_array = int_print_array.astype(float)
 
     cmap = matplotlib.colormaps["rainbow"].copy()
-    cmap.set_bad(color="black")
+    cmap.set_extremes(bad="black", under="white", over="white")
 
     fig, ax = plt.subplots(figsize=figsize)
-    ax.imshow(int_print_array, cmap=cmap)
+    ax.imshow(int_print_array, cmap=cmap, vmin=0, vmax=len(unique_vals))
 
     return fig

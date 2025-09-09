@@ -26,39 +26,19 @@ def test() -> None:
         for dilution, rowname in enumerate(ascii_uppercase[0:16:2], start=1):
             print_plate.loc[rowname, column] = f"{oligo}-{dilution}"
 
-    # Configure blocks
-    l = []
-    for col, series in print_plate.items():
-        for row, val in series.items():
-            if not pd.isna(val):
-                l.append(
-                    {
-                        "Plate": 1,
-                        "Well": f"{row}{col}",
-                        "Name": val,
-                        "Block": (1,),
-                    }
-                )
-
-    print_spec = pd.DataFrame(l)
-
     # Project Configuration
     project = "MyProject"
     rows = 56
     columns = 32
     skip_rows = True
-    n_blocks = 1
     device: Final = "PS1.8K"
 
     # Generate print array
     print_array = arrayprint.generate_print_array(
-        print_spec=print_spec,
+        print_plates=[print_plate],
         rows=rows,
         columns=columns,
         skip_rows=skip_rows,
-        n_blocks=n_blocks,
-        notch_column=28,
-        notch_depth=20,
         seed=0,
     )
 
@@ -71,3 +51,6 @@ def test() -> None:
         filename = glob.glob(f"{basename}*.fld")[0]
         refname = pathlib.Path(__file__).parent.joinpath("MyProject.fld")
         assert filecmp.cmp(filename, refname, shallow=False)
+        # tail -n 1 MyProject.fld |  head -c 1 | xxd - should return a7 (§)
+        # head -n 21 MyProject.fld | tail -n 1 | head -c 9 | tail -c 1 | xxd -
+        #     should return b5 (µ)

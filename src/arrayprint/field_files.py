@@ -36,7 +36,7 @@ headers_footers = {
             "-11-45-13-08-51-38-40-19-23-39-64-56-26-44-38-32-68\r\n"
         ),
     ),
-    "STAMMP-seq": (
+    "2lagoon": (
         "\r\n".join(
             [
                 "Comment: ",
