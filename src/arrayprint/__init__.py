@@ -111,15 +111,17 @@ def generate_print_array(
         row, col = np.nonzero(plate.to_numpy() == WASH)
         for i, j in zip(row, col):
             wash_wells.append(f"{plate_idx}{plate.index[i]}{plate.columns[j]}")
-    if len(wash_wells) > 0 and wash_array_loc is None:
-        warnings.warn(
-            f"Found {len(wash_wells)} wash wells in the print plate"
-            " but no location was provided to spot them on the array;"
-            " you can do so using the `wash_array_loc` argument"
-        )
-        print_array[wash_array_loc[1] - 1, wash_array_loc[0] - 1] = ",".join(
-            wash_wells
-        )
+    if len(wash_wells) > 0:
+        if wash_array_loc is None:
+            warnings.warn(
+                f"Found {len(wash_wells)} wash wells in the print plate"
+                " but no location was provided to spot them on the array;"
+                " you can do so using the `wash_array_loc` argument"
+            )
+        else:
+            print_array[tuple(i - 1 for i in wash_array_loc)] = ",".join(
+                wash_wells
+            )
 
     # Fill in each block in-place using slicing to produce a view
     for i, block in enumerate(block_info):
@@ -184,8 +186,24 @@ def write_fld(
         device: Device type used for writing the header and footer
     """
     timestamp = datetime.now().strftime(r"%Y_%m_%d__%H_%M_%S")
-    with open(f"{basename}_{timestamp}.fld", "wt", encoding="cp1252") as f:
+    filename = f"{basename}_{timestamp}.fld"
+    with open(filename, "wt", encoding="cp1252") as f:
         f.write(get_fld(print_array, device=device))
+
+    # Double check that the file was written correctly
+    with open(filename, "rb") as f:
+        data = f.read()
+
+    crlf_ending = bytearray([0x0D, 0x0A])
+
+    # tail -c 2 *.fld  | xxd -
+    assert data[-2:] == crlf_ending
+
+    # head -n 21 *.fld | tail -n 1 | head -c 9 | tail -c 1 | xxd -
+    assert data.split(crlf_ending)[20][8] == 0xB5  # µ
+
+    # tail -n 1 *.fld  | head -c 1 | xxd
+    assert data.split(crlf_ending)[-2][0] == 0xA7  # §
 
 
 def load_fld(path: str) -> pd.DataFrame:
