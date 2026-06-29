@@ -221,8 +221,8 @@ def load_fld(path: str) -> pd.DataFrame:
         for i in fld_contents.split("]\n")[1:]
     ]
     for i in fields:
-        i.well = i.well.apply(lambda x: x[:-1] if len(x) > 2 else x[0])
-        i.spots = i.spots.apply(lambda x: x[:-1] if len(x) > 2 else x[0])
+        i["well"] = i["well"].apply(lambda x: x[:-1] if len(x) > 2 else x[0])
+        i["spots"] = i["spots"].apply(lambda x: x[:-1] if len(x) > 2 else x[0])
 
     return pd.concat(fields, keys=range(len(fields)), axis=0)
 
@@ -233,7 +233,7 @@ def get_pinlist(fld: pd.DataFrame, print_plate: pd.DataFrame) -> pd.DataFrame:
         {
             "Indices": [
                 (int(i), int(j))
-                for i, j in fld.loc[0].array_loc.str.split("/")
+                for i, j in fld.loc[0]["array_loc"].str.split("/")
             ],
             "MutantID": [
                 (
@@ -241,12 +241,12 @@ def get_pinlist(fld: pd.DataFrame, print_plate: pd.DataFrame) -> pd.DataFrame:
                     if i.startswith("1P24")
                     else print_plate.loc[i[1], int(i[2:])]
                 )
-                for i in fld.loc[0].well
+                for i in fld.loc[0]["well"]
             ],
         }
     )
-    pinlist["x"] = pinlist.Indices.apply(lambda x: x[0])
-    pinlist["y"] = pinlist.Indices.apply(lambda x: x[1])
+    pinlist["x"] = pinlist["Indices"].apply(lambda x: x[0])
+    pinlist["y"] = pinlist["Indices"].apply(lambda x: x[1])
     return pinlist.set_index(["x", "y"], drop=True).sort_index()
 
 

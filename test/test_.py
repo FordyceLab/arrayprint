@@ -28,17 +28,16 @@ def test() -> None:
 
     # Project Configuration
     project = "MyProject"
-    rows = 56
-    columns = 32
-    skip_rows = True
     device: Final = "PS1.8K"
 
     # Generate print array
     print_array = arrayprint.generate_print_array(
         print_plates=[print_plate],
-        rows=rows,
-        columns=columns,
-        skip_rows=skip_rows,
+        rows=56,
+        columns=32,
+        skip_rows=True,
+        block_info=None,
+        empty_buf_well="",
         seed=0,
     )
 
