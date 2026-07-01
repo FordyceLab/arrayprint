@@ -15,11 +15,11 @@ import numpy as np
 import pandas as pd
 from numpy import typing as npt
 
-from .field_files import headers_footers
+from .field_files import FOOTER, HEADERS
 
 __version__ = "0.1.0"
 DeviceTypes = Literal["PS1.8K", "2lagoon"]
-assert tuple(headers_footers.keys()) == get_args(DeviceTypes)
+assert tuple(HEADERS.keys()) == get_args(DeviceTypes)
 
 WASH = "WASH"
 BUF = "BUF"
@@ -151,7 +151,7 @@ def get_fld(
     rows, columns = print_array.shape
 
     if device is not None:
-        header, footer = headers_footers[device]
+        header = HEADERS[device]
         out = [header]
     else:
         out = []
@@ -168,7 +168,7 @@ def get_fld(
                 out.append(f"{array_loc}\t\t")
 
     if device is not None:
-        out.append(footer)
+        out.append(FOOTER)
 
     return "\r\n".join(out)
 
